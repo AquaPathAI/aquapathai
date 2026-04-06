@@ -2,35 +2,40 @@ import time
 import random
 
 # ==========================================
-# 1. THE KNOWLEDGE GRAPH (Nodes & Edges)
+# THE KNOWLEDGE GRAPH (Nodes, Edges & Distances)
 # ==========================================
-# This dictionary represents our 15 ports and the valid shipping lanes between them.
+# Values are estimated Nautical Miles (NM) between ports.
 MARITIME_NETWORK = {
-    "Mumbai": ["Singapore", "Dubai", "Aden", "Cape Town"],
-    "Singapore": ["Mumbai", "Shanghai", "Tokyo", "Los Angeles"],
-    "Shanghai": ["Singapore", "Tokyo", "Los Angeles"],
-    "Tokyo": ["Shanghai", "Singapore", "Los Angeles"],
-    "Dubai": ["Mumbai", "Aden"],
-    "Aden": ["Dubai", "Mumbai", "Suez", "Cape Town"],
-    "Suez": ["Aden", "Gibraltar"],
-    "Cape Town": ["Mumbai", "Aden", "Santos", "Gibraltar"],
-    "Gibraltar": ["Suez", "Cape Town", "Rotterdam", "New York"],
-    "Rotterdam": ["Gibraltar", "Hamburg", "New York"],
-    "Hamburg": ["Rotterdam", "New York"],
-    "New York": ["Gibraltar", "Rotterdam", "Hamburg", "Panama Canal"],
-    "Los Angeles": ["Tokyo", "Singapore", "Panama Canal"],
-    "Panama Canal": ["Los Angeles", "New York", "Santos"],
-    "Santos": ["Cape Town", "Panama Canal"]
+    # --- ASIA & MIDDLE EAST ---
+    "Mumbai": {"Aden": 1650, "Dubai": 930, "Singapore": 2440, "Cape Town": 4600},
+    "Singapore": {"Mumbai": 2440, "Shanghai": 2500, "Tokyo": 2900, "Los Angeles": 7600},
+    "Shanghai": {"Singapore": 2500, "Tokyo": 1000, "Los Angeles": 5700},
+    "Tokyo": {"Shanghai": 1000, "Singapore": 2900, "Los Angeles": 5400, "Panama Canal": 7600},
+    "Dubai": {"Mumbai": 930, "Aden": 1400},
+    
+    # --- AFRICA & CHOKEPOINTS ---
+    "Aden": {"Dubai": 1400, "Mumbai": 1650, "Suez": 1300, "Cape Town": 3900},
+    "Suez": {"Aden": 1300, "Gibraltar": 1900},
+    "Cape Town": {"Mumbai": 4600, "Aden": 3900, "Santos": 3300, "Gibraltar": 4500},
+    
+    # --- EUROPE ---
+    "Gibraltar": {"Suez": 1900, "Cape Town": 4500, "Rotterdam": 1300, "New York": 3100},
+    "Rotterdam": {"Gibraltar": 1300, "Hamburg": 250, "New York": 3400},
+    "Hamburg": {"Rotterdam": 250, "New York": 3500},
+    
+    # --- THE AMERICAS ---
+    "New York": {"Gibraltar": 3100, "Rotterdam": 3400, "Hamburg": 3500, "Panama Canal": 2000, "Santos": 4800},
+    "Los Angeles": {"Tokyo": 5400, "Shanghai": 5700, "Singapore": 7600, "Panama Canal": 2900},
+    "Panama Canal": {"Los Angeles": 2900, "New York": 2000, "Santos": 3400, "Tokyo": 7600},
+    "Santos": {"Cape Town": 3300, "Panama Canal": 3400, "New York": 4800}
 }
 
 # ==========================================
-# 2. THE AI SCORING ENGINE
+# THE AI SCORING ENGINE
 # ==========================================
 def fetch_edge_data(start, end):
-    """
-    Simulates fetching data from Open-Meteo and GFW APIs for a specific route leg.
-    Returns a dictionary of risk factors.
-    """
+    # Simulates fetching data from Open-Meteo and GFW APIs for a specific route leg.
+    # Returns a dictionary of risk factors.
     wave_height = round(random.uniform(0.5, 6.0), 1) # Meters
     wind_speed = random.randint(10, 80) # km/h
     traffic_density = random.randint(10, 100) # Number of vessels
@@ -51,10 +56,10 @@ def fetch_edge_data(start, end):
     return round(final_score, 2), weather_risk, traffic_risk
 
 # ==========================================
-# 3. THE PATHFINDING ALGORITHM (DFS)
+# THE PATHFINDING ALGORITHM (DFS)
 # ==========================================
 def find_all_paths(graph, start, end, path=None):
-    """Finds all possible routes between the start and end ports without looping."""
+    # Finds all possible routes between the start and end ports without looping.
     if path is None:
         path = []
         
@@ -63,7 +68,7 @@ def find_all_paths(graph, start, end, path=None):
     if start == end:
         return [path]
         
-    if start not in graph: # Fixed syntax error here
+    if start not in graph:
         return []
     
     paths = []
@@ -74,8 +79,17 @@ def find_all_paths(graph, start, end, path=None):
                 paths.append(newpath)
     return paths
 
+def calculate_total_distance(path):
+    # Calculates the total nautical miles of a given path.
+    total_distance = 0
+    for i in range(len(path) - 1):
+        port_a = path[i]
+        port_b = path[i+1]
+        total_distance += MARITIME_NETWORK[port_a][port_b]
+    return total_distance
+
 # ==========================================
-# 4. COMMAND-LINE INTERFACE (UI)
+# COMMAND-LINE INTERFACE (UI)
 # ==========================================
 def clear_screen():
     print("\n" * 50)
@@ -127,26 +141,49 @@ def main():
         print("\n[!] No valid maritime route found between these ports.")
         return
         
+    # --- NEW DISTANCE FILTERING LOGIC ---
+    # Calculate distance for all paths and sort them from shortest to longest
+    routes_with_distance = []
+    for path in possible_routes:
+        dist = calculate_total_distance(path)
+        routes_with_distance.append({"path": path, "distance": dist})
+        
+    # Sort the list by distance (shortest first)
+    routes_with_distance.sort(key=lambda x: x['distance'])
+    
+    # Keep only the top 3 physically shortest routes to evaluate for safety
+    top_shortest_routes = routes_with_distance[:3]
+    # ------------------------------------
+
     # Evaluate routes
     scored_routes = []
     print("\n" + "="*50)
-    print("EVALUATING ROUTE OPTIONS:")
+    print("EVALUATING TOP 3 SHORTEST ROUTES FOR SAFETY:")
     print("="*50)
     
-    # Look at the first 5 paths found to keep the output readable
-    for idx, path in enumerate(possible_routes[:5]):
+    # We now loop through our pre-filtered shortest routes
+    for idx, route_data in enumerate(top_shortest_routes):
+        path = route_data["path"]
+        distance = route_data["distance"]
+        
         total_score = 0
         path_string = " -> ".join(path)
         
-        # Score each leg of the journey
+        # Score each leg of the journey for Weather/Traffic
         for i in range(len(path) - 1):
             score, w_risk, t_risk = fetch_edge_data(path[i], path[i+1])
             total_score += score
             
         avg_score = round(total_score / (len(path) - 1), 2)
-        scored_routes.append({"path": path, "score": avg_score, "string": path_string})
+        scored_routes.append({
+            "path": path, 
+            "score": avg_score, 
+            "string": path_string,
+            "distance": distance
+        })
         
         print(f"Option {idx + 1}: {path_string}")
+        print(f"   -> Distance: {distance} Nautical Miles")
         print(f"   -> Warning Level: {avg_score}/5.00\n")
         time.sleep(0.5)
 
@@ -166,6 +203,7 @@ def main():
         print("    |")
         print("    V")
         print(f" [ {port} ]")
+    print(f"Total Distance: {best_route['distance']} NM")
         
     print("\nSafe travels! Thank you for using AquaPath AI.")
 
