@@ -1,5 +1,19 @@
 import time
-import random
+import requests
+
+# ==========================================
+# PORT COORDINATES (Latitude & Longitude)
+# ==========================================
+PORT_COORDINATES = {
+    "Mumbai": {"lat": 18.94, "lon": 72.83}, "Singapore": {"lat": 1.29, "lon": 103.85},
+    "Shanghai": {"lat": 31.23, "lon": 121.47}, "Tokyo": {"lat": 35.67, "lon": 139.65},
+    "Dubai": {"lat": 25.20, "lon": 55.27}, "Aden": {"lat": 12.79, "lon": 44.98},
+    "Suez": {"lat": 29.96, "lon": 32.55}, "Cape Town": {"lat": -33.92, "lon": 18.42},
+    "Gibraltar": {"lat": 36.14, "lon": -5.35}, "Rotterdam": {"lat": 51.92, "lon": 4.48},
+    "Hamburg": {"lat": 53.55, "lon": 9.99}, "New York": {"lat": 40.71, "lon": -74.00},
+    "Los Angeles": {"lat": 34.05, "lon": -118.24}, "Panama Canal": {"lat": 9.14, "lon": -79.72},
+    "Santos": {"lat": -23.96, "lon": -46.33}
+}
 
 # ==========================================
 # THE KNOWLEDGE GRAPH (Nodes, Edges & Distances)
@@ -33,27 +47,54 @@ MARITIME_NETWORK = {
 # ==========================================
 # THE AI SCORING ENGINE
 # ==========================================
-def fetch_edge_data(start, end):
-    # Simulates fetching data from Open-Meteo and GFW APIs for a specific route leg.
-    # Returns a dictionary of risk factors.
-    wave_height = round(random.uniform(0.5, 6.0), 1) # Meters
-    wind_speed = random.randint(10, 80) # km/h
-    traffic_density = random.randint(10, 100) # Number of vessels
+def evaluate_full_path(path):
+    """Takes an array of ports, fetches weather for all of them, and returns a total route score."""
     
-    # Calculate Weather Risk (1-5)
+    traffic_density = 20 # Static placeholder for now
+    
+    total_wind = 0
+    total_wave = 0
+    successful_checks = 0
+    
+    # We loop through the array of ports exactly ONCE
+    for port in path:
+        pt = PORT_COORDINATES[port]
+        weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={pt['lat']}&longitude={pt['lon']}&current=wind_speed_10m"
+        marine_url = f"https://marine-api.open-meteo.com/v1/marine?latitude={pt['lat']}&longitude={pt['lon']}&current=wave_height"
+        
+        try:
+            wind_response = requests.get(weather_url, timeout=2)
+            wave_response = requests.get(marine_url, timeout=2)
+            
+            if wind_response.status_code == 200 and wave_response.status_code == 200:
+                total_wind += wind_response.json()["current"]["wind_speed_10m"]
+                total_wave += wave_response.json()["current"]["wave_height"]
+                successful_checks += 1
+        except Exception:
+            pass # Silently skip if a specific port's ping fails
+            
+    # Calculate the average weather for the ENTIRE route
+    if successful_checks > 0:
+        wind_speed = total_wind / successful_checks
+        wave_height = round(total_wave / successful_checks, 1)
+    else:
+        # Fallback if the whole internet drops
+        wind_speed = 15 
+        wave_height = 1.0 
+
+    # --- APPLY SCORING LOGIC FOR THE WHOLE ROUTE ---
     if wave_height > 4.0 or wind_speed > 60: weather_risk = 5
     elif wave_height > 2.5 or wind_speed > 40: weather_risk = 3
     else: weather_risk = 1
         
-    # Calculate Traffic Risk (1-5)
     if traffic_density > 80: traffic_risk = 5
     elif traffic_density > 40: traffic_risk = 3
     else: traffic_risk = 1
         
-    # Apply your hybrid Weightage: 65% Weather, 35% Traffic
     final_score = (weather_risk * 0.65) + (traffic_risk * 0.35)
     
-    return round(final_score, 2), weather_risk, traffic_risk
+    # We return the score, plus the average weather to display in the UI!
+    return round(final_score, 2), wave_height, round(wind_speed, 1)
 
 # ==========================================
 # THE PATHFINDING ALGORITHM (DFS)
@@ -141,7 +182,6 @@ def main():
         print("\n[!] No valid maritime route found between these ports.")
         return
         
-    # --- NEW DISTANCE FILTERING LOGIC ---
     # Calculate distance for all paths and sort them from shortest to longest
     routes_with_distance = []
     for path in possible_routes:
@@ -161,20 +201,14 @@ def main():
     print("EVALUATING TOP 3 SHORTEST ROUTES FOR SAFETY:")
     print("="*50)
     
-    # We now loop through our pre-filtered shortest routes
     for idx, route_data in enumerate(top_shortest_routes):
         path = route_data["path"]
         distance = route_data["distance"]
-        
-        total_score = 0
         path_string = " -> ".join(path)
         
-        # Score each leg of the journey for Weather/Traffic
-        for i in range(len(path) - 1):
-            score, w_risk, t_risk = fetch_edge_data(path[i], path[i+1])
-            total_score += score
-            
-        avg_score = round(total_score / (len(path) - 1), 2)
+        # Pass the WHOLE array into our new function in one shot!
+        avg_score, avg_wave, avg_wind = evaluate_full_path(path)
+        
         scored_routes.append({
             "path": path, 
             "score": avg_score, 
@@ -184,6 +218,7 @@ def main():
         
         print(f"Option {idx + 1}: {path_string}")
         print(f"   -> Distance: {distance} Nautical Miles")
+        print(f"   -> Avg Weather: Waves {avg_wave}m | Wind {avg_wind}km/h")
         print(f"   -> Warning Level: {avg_score}/5.00\n")
         time.sleep(0.5)
 
