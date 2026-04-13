@@ -1,5 +1,40 @@
 import time
 import requests
+import csv
+import sys
+import threading
+
+# ==========================================
+# CLI LOADING ANIMATION (Multithreading)
+# ==========================================
+class Spinner:
+    def __init__(self, message="Evaluating"):
+        self.spinner = ['-', '\\', '|', '/']
+        self.delay = 0.1
+        self.busy = False
+        self.message = message
+
+    def spin(self):
+        while self.busy:
+            for char in self.spinner:
+                if not self.busy:
+                    break
+                # \r forces the terminal to overwrite the current line
+                sys.stdout.write(f'\r[AI] {self.message}... {char}')
+                sys.stdout.flush()
+                time.sleep(self.delay)
+        # Clear the line completely when finished
+        sys.stdout.write('\r' + ' ' * (len(self.message) + 15) + '\r')
+        sys.stdout.flush()
+
+    def start(self):
+        self.busy = True
+        # Launch the animation in a background thread
+        threading.Thread(target=self.spin, daemon=True).start()
+
+    def stop(self):
+        self.busy = False
+        time.sleep(self.delay)
 
 # ==========================================
 # PORT COORDINATES (Latitude & Longitude)
@@ -48,15 +83,16 @@ MARITIME_NETWORK = {
 # THE AI SCORING ENGINE
 # ==========================================
 def evaluate_full_path(path):
-    """Takes an array of ports, fetches weather for all of them, and returns a total route score."""
-    
-    traffic_density = 20 # Static placeholder for now
+    """Fetches live weather via API and local traffic via CSV database."""
     
     total_wind = 0
     total_wave = 0
-    successful_checks = 0
+    successful_weather_checks = 0
     
-    # We loop through the array of ports exactly ONCE
+    total_traffic = 0
+    successful_traffic_checks = 0
+    
+    # --- FETCH LIVE WEATHER (Open-Meteo API) ---
     for port in path:
         pt = PORT_COORDINATES[port]
         weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={pt['lat']}&longitude={pt['lon']}&current=wind_speed_10m"
@@ -69,20 +105,42 @@ def evaluate_full_path(path):
             if wind_response.status_code == 200 and wave_response.status_code == 200:
                 total_wind += wind_response.json()["current"]["wind_speed_10m"]
                 total_wave += wave_response.json()["current"]["wave_height"]
-                successful_checks += 1
+                successful_weather_checks += 1
         except Exception:
-            pass # Silently skip if a specific port's ping fails
-            
-    # Calculate the average weather for the ENTIRE route
-    if successful_checks > 0:
-        wind_speed = total_wind / successful_checks
-        wave_height = round(total_wave / successful_checks, 1)
+            pass # Weather fails silently to fallback data
+
+    # --- FETCH LOCAL TRAFFIC (CSV Database) ---
+    for i in range(len(path) - 1):
+        leg_start = path[i]
+        leg_end = path[i+1]
+        
+        try:
+            with open("traffic_data.csv", mode="r") as file:
+                reader = csv.reader(file)
+                next(reader) # Skip the header
+                for row in reader:
+                    # Check if route matches (either direction)
+                    if (row[0] == leg_start and row[1] == leg_end) or (row[0] == leg_end and row[1] == leg_start):
+                        total_traffic += int(row[2])
+                        successful_traffic_checks += 1
+                        break
+        except FileNotFoundError:
+            pass 
+
+    # --- CALCULATE ROUTE AVERAGES ---
+    if successful_weather_checks > 0:
+        wind_speed = total_wind / successful_weather_checks
+        wave_height = round(total_wave / successful_weather_checks, 1)
     else:
-        # Fallback if the whole internet drops
         wind_speed = 15 
         wave_height = 1.0 
+        
+    if successful_traffic_checks > 0:
+        traffic_density = int(total_traffic / successful_traffic_checks)
+    else:
+        traffic_density = 20 # Safe fallback if route isn't in CSV
 
-    # --- APPLY SCORING LOGIC FOR THE WHOLE ROUTE ---
+    # --- APPLY SCORING LOGIC ---
     if wave_height > 4.0 or wind_speed > 60: weather_risk = 5
     elif wave_height > 2.5 or wind_speed > 40: weather_risk = 3
     else: weather_risk = 1
@@ -93,8 +151,7 @@ def evaluate_full_path(path):
         
     final_score = (weather_risk * 0.65) + (traffic_risk * 0.35)
     
-    # We return the score, plus the average weather to display in the UI!
-    return round(final_score, 2), wave_height, round(wind_speed, 1)
+    return round(final_score, 2), wave_height, round(wind_speed, 1), traffic_density
 
 # ==========================================
 # THE PATHFINDING ALGORITHM (DFS)
@@ -170,10 +227,6 @@ def main():
         
     print("\n[System] Analyzing historical routes...")
     time.sleep(1)
-    print("[System] Pinging Open-Meteo API for live weather...")
-    time.sleep(1)
-    print("[System] Fetching GFW AIS vessel traffic density...")
-    time.sleep(1.5)
     
     # Find paths
     possible_routes = find_all_paths(MARITIME_NETWORK, start_port, end_port)
@@ -198,7 +251,21 @@ def main():
     # Evaluate routes
     scored_routes = []
     print("\n" + "="*50)
-    print("EVALUATING TOP 3 SHORTEST ROUTES FOR SAFETY:")
+    print(" 🗺️  TOP 3 SHORTEST ROUTES DISCOVERED ")
+    print("="*50)
+    
+    # --- SHOW THE DISCOVERED ROUTES FIRST ---
+    for idx, route_data in enumerate(top_shortest_routes):
+        path_string = " -> ".join(route_data["path"])
+        distance = route_data["distance"]
+        print(f"Option {idx + 1}: {path_string}")
+        print(f"   ↳ Distance: {distance} Nautical Miles\n")
+        time.sleep(0.5)
+
+    # --- RUN AI EVALUATION WITH LOADING SPINNER ---
+    scored_routes = []
+    print("="*50)
+    print(" 🧠 RUNNING AI SAFETY EVALUATION ")
     print("="*50)
     
     for idx, route_data in enumerate(top_shortest_routes):
@@ -206,9 +273,17 @@ def main():
         distance = route_data["distance"]
         path_string = " -> ".join(path)
         
-        # Pass the WHOLE array into our new function in one shot!
-        avg_score, avg_wave, avg_wind = evaluate_full_path(path)
+        # Start the animated loading spinner
+        spinner = Spinner(message=f"Evaluating Option {idx + 1}")
+        spinner.start()
         
+        # The program will pause here to fetch APIs while the spinner runs!
+        avg_score, avg_wave, avg_wind, avg_traffic = evaluate_full_path(path)
+        
+        # Stop the spinner and clear the line
+        spinner.stop()
+        
+        # Save the scores
         scored_routes.append({
             "path": path, 
             "score": avg_score, 
@@ -216,9 +291,10 @@ def main():
             "distance": distance
         })
         
-        print(f"Option {idx + 1}: {path_string}")
-        print(f"   -> Distance: {distance} Nautical Miles")
+        # Print the final results for this specific route
+        print(f"✅ Option {idx + 1} Evaluated: {path_string}")
         print(f"   -> Avg Weather: Waves {avg_wave}m | Wind {avg_wind}km/h")
+        print(f"   -> Avg Traffic: {avg_traffic} active vessels detected")
         print(f"   -> Warning Level: {avg_score}/5.00\n")
         time.sleep(0.5)
 
