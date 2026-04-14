@@ -140,18 +140,24 @@ def evaluate_full_path(path):
     else:
         traffic_density = 20 # Safe fallback if route isn't in CSV
 
-    # --- APPLY SCORING LOGIC ---
-    if wave_height > 4.0 or wind_speed > 60: weather_risk = 5
-    elif wave_height > 2.5 or wind_speed > 40: weather_risk = 3
-    else: weather_risk = 1
+    # --- APPLY SCORING LOGIC (Machine Learning Equations) ---
+    
+    # Weather Risk (Calculated via Orange3 Linear Regression)
+    weather_risk = (wave_height * 0.5107) + (wind_speed * 0.024) + 0.0105
+    
+    # Clamp the risk between 0.0 and 5.0
+    weather_risk = max(0.0, min(5.0, weather_risk)) 
         
-    if traffic_density > 80: traffic_risk = 5
-    elif traffic_density > 40: traffic_risk = 3
-    else: traffic_risk = 1
+    # Traffic Risk (Calculated via Orange3 Linear Regression)
+    traffic_risk = (traffic_density * 0.0484) + 0.0407
+    
+    # Clamp the risk between 0.0 and 5.0
+    traffic_risk = max(0.0, min(5.0, traffic_risk))
         
+    # Final Hybrid Score (65% Weather, 35% Traffic)
     final_score = (weather_risk * 0.65) + (traffic_risk * 0.35)
     
-    return round(final_score, 2), wave_height, round(wind_speed, 1), traffic_density
+    return round(final_score, 2), wave_height, round(wind_speed, 1), int(traffic_density)
 
 # ==========================================
 # THE PATHFINDING ALGORITHM (DFS)
