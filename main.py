@@ -83,7 +83,7 @@ MARITIME_NETWORK = {
 # THE AI SCORING ENGINE
 # ==========================================
 def evaluate_full_path(path):
-    """Fetches live weather via API and local traffic via CSV database."""
+    # Fetches live weather via API and local traffic via CSV database.
     
     total_wind = 0
     total_wave = 0
@@ -132,6 +132,8 @@ def evaluate_full_path(path):
         wind_speed = total_wind / successful_weather_checks
         wave_height = round(total_wave / successful_weather_checks, 1)
     else:
+        # Safe fallback values if API fails completely
+        print("\n[!] Warning: Unable to fetch live weather data. Using fallback values.")
         wind_speed = 15 
         wave_height = 1.0 
         
@@ -225,9 +227,14 @@ def main():
     
     # Get User Input
     start_port = input("Enter Starting Port: ").strip().title()
+
+    if start_port not in ports_list:
+        print("\n[!] Error: Invalid port selected. Please restart and check spelling.")
+        return
+
     end_port = input("Enter Destination Port: ").strip().title()
     
-    if start_port not in ports_list or end_port not in ports_list:
+    if end_port not in ports_list:
         print("\n[!] Error: Invalid port selected. Please restart and check spelling.")
         return
         
