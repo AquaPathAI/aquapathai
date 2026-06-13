@@ -34,7 +34,7 @@ class Spinner:
                 if not self.busy:
                     break
                 # \r overwrites the current line in the terminal
-                sys.stdout.write(f'\r[AI] {self.message}... {char}')
+                sys.stdout.write(f'\r{CYAN}[AI] {self.message}... {char}{RESET}')
                 sys.stdout.flush()
                 time.sleep(self.delay)
                 
@@ -51,6 +51,16 @@ class Spinner:
         """Stops the spinner animation and cleans up the terminal line."""
         self.busy = False
         time.sleep(self.delay)
+
+# ==========================================
+# CLI COLOR CODES (ANSI Escape Sequences)
+# ==========================================
+BOLD = "\033[1m"
+CYAN = "\033[36m"
+GREEN = "\033[32m"
+YELLOW = "\033[33m"
+RED = "\033[31m"
+RESET = "\033[0m"
 
 # ==========================================
 # PORT COORDINATES (Latitude & Longitude)
@@ -111,8 +121,9 @@ def evaluate_full_path(path):
     """
     total_wind = 0
     total_wave = 0
-    successful_weather_checks = 0
-    
+    successful_wind_checks = 0
+    successful_wave_checks = 0
+
     total_traffic = 0
     successful_traffic_checks = 0
     
@@ -127,12 +138,12 @@ def evaluate_full_path(path):
             wind_response = requests.get(weather_url, timeout=3)
             wave_response = requests.get(marine_url, timeout=3)
             
-            # If a port is too far inland, marine API might return a 400 error.
-            # We only count it as successful if BOTH APIs return 200 OK.
-            if wind_response.status_code == 200 and wave_response.status_code == 200:
+            if wind_response.status_code == 200:
                 total_wind += wind_response.json()["current"]["wind_speed_10m"]
+                successful_wind_checks += 1
+            if wave_response.status_code == 200:
                 total_wave += wave_response.json()["current"]["wave_height"]
-                successful_weather_checks += 1
+                successful_wave_checks += 1
         except Exception:
             pass # Skip safely if there is no internet connection
 
@@ -155,14 +166,18 @@ def evaluate_full_path(path):
     # --- C. CALCULATE AVERAGES ---
     # BUG FIX: Only trigger the fallback warning if EVERY SINGLE port failed.
     # If even one port succeeded, we use that live data!
-    if successful_weather_checks > 0:
+    if successful_wind_checks > 0:
         used_fallback = False
-        wind_speed = total_wind / successful_weather_checks
-        wave_height = total_wave / successful_weather_checks
+        wind_speed = total_wind / successful_wind_checks
     else:
         used_fallback = True
-        wind_speed = 15.0 
-        wave_height = 1.0 
+        wind_speed = 15.0
+        
+    if successful_wave_checks > 0:
+        wave_height = total_wave / successful_wave_checks
+    else:
+        wave_height = 2.0
+        used_fallback = True
         
     if successful_traffic_checks > 0:
         traffic_density = total_traffic / successful_traffic_checks
@@ -247,16 +262,15 @@ def clear_screen():
     print("\n" * 50)
 
 def print_logo():
-    """Prints the AquaPath AI ASCII text logo to the console."""
-    print("""
-***************************************************
-* *
-* A Q U A P A T H   A I                          *
-* ------------------------------------           *
-* Optimizing Maritime Routes | Smart Seas        *
-* *
-***************************************************
-    """)
+    """Prints the AquaPath AI ASCII text logo to the console with colors."""
+    
+    print(f"{CYAN}{BOLD}***************************************************")
+    print(f"* *")
+    print(f"* A Q U A P A T H   A I                          *")
+    print(f"* ------------------------------------           *")
+    print(f"* Optimizing Maritime Routes | Smart Seas        *")
+    print(f"* *")
+    print(f"***************************************************{RESET}")
 
 def main():
     """
@@ -268,7 +282,7 @@ def main():
     print_logo()
     
     ports_list = list(MARITIME_NETWORK.keys())
-    print("Available Global Ports:")
+    print(f"{CYAN}Available Global Ports:{RESET}")
     for i in range(0, len(ports_list), 3):
         col1 = ports_list[i]
         col2 = ports_list[i+1] if i+1 < len(ports_list) else ''
@@ -278,30 +292,34 @@ def main():
     print("\n" + "="*50)
     
     # Get User Input
-    while True:
-        start_port = input("Enter Starting Port: ").strip().title()
+    try:
+        while True:
+            start_port = input("Enter Starting Port: ").strip().title()
 
-        if start_port in ports_list:
-            break
-        else:
-            print("\n[!] Error: Invalid port selected. Please check spelling.")
+            if start_port in ports_list:
+                break
+            else:
+                print(f"\n{RED}[!] Error: Invalid port selected. Please check spelling.{RESET}")
 
-    while True:
-        end_port = input("Enter Destination Port: ").strip().title()
-    
-        if end_port in ports_list:
-            break
-        else:
-            print("\n[!] Error: Invalid port selected. Please check spelling.")
+        while True:
+            end_port = input("Enter Destination Port: ").strip().title()
+        
+            if end_port in ports_list:
+                break
+            else:
+                print(f"\n{RED}[!] Error: Invalid port selected. Please check spelling.{RESET}")
+    except KeyboardInterrupt:
+        print(f"\n\n{YELLOW}[!] Program shutdown initiated. Shutting down AquaPath AI safely...{RESET}")
+        return
 
-    print("\n[System] Analyzing historical routes...")
+    print(f"\n{CYAN}[System] Analyzing historical routes...{RESET}")
     time.sleep(1)
     
     # Find paths
     possible_routes = find_all_paths(MARITIME_NETWORK, start_port, end_port)
     
     if not possible_routes:
-        print("\n[!] No valid maritime route found between these ports.")
+        print(f"\n{RED}[!] No valid maritime route found between these ports.{RESET}")
         return
         
     # Calculate distance for all paths and sort them from shortest to longest
@@ -319,11 +337,21 @@ def main():
 
     # Evaluate routes
     scored_routes = []
-    print("\n" + "="*50)
-    print(" 🗺️  TOP 3 SHORTEST ROUTES DISCOVERED ")
-    print("="*50)
+    print(GREEN +"\n" + "="*50)
+    print(f" 🗺️  TOP 3 SHORTEST ROUTES DISCOVERED ")
+    print("="*50 + RESET)
     
     # --- SHOW THE DISCOVERED ROUTES FIRST ---
+    # show the top 3 shortest routes before evaluating them
+    for idx, route_data in enumerate(top_shortest_routes):
+        path = route_data["path"]
+        distance = route_data["distance"]
+        path_string = " -> ".join(path)
+        print(f"Option {idx + 1}: {path_string} | Distance: {distance} NM")
+        time.sleep(0.5)
+    else:
+        print("\n" + "="*50)
+
     for idx, route_data in enumerate(top_shortest_routes):
         path = route_data["path"]
         distance = route_data["distance"]
@@ -348,11 +376,11 @@ def main():
         })
         
         # Print the results cleanly AFTER the spinner is gone
-        print(f"✅ Option {idx + 1} Evaluated: {path_string}")
+        print(f"{GREEN}✅ Option {idx + 1} Evaluated: {path_string}{RESET}")
         
         # Print the warning if the API failed
         if used_fallback:
-            print("   [!] WARNING: Unable to fetch live data. Using fallback weather values.")
+            print(f"   {YELLOW}[!] WARNING: Unable to fetch live data. Using fallback weather values.{RESET}")
             
         print(f"   -> Avg Weather: Waves {avg_wave}m | Wind {avg_wind}km/h")
         print(f"   -> Avg Traffic: {avg_traffic} active vessels detected")
@@ -362,14 +390,14 @@ def main():
     # Select the best route
     best_route = min(scored_routes, key=lambda x: x['score'])
     
-    print("\n" + "="*50)
+    print(GREEN + "\n" + "="*50)
     print("✅ OPTIMAL ROUTE SELECTED")
-    print("="*50)
+    print("="*50 + RESET)
     print(f"Path: {best_route['string']}")
     print(f"Average Warning Level: {best_route['score']} / 5.00")
-    print("Safety Status: " + ("OPTIMAL" if best_route['score'] < 2.5 else "PROCEED WITH CAUTION"))
+    print("Safety Status: " + (f"{GREEN}OPTIMAL{RESET}" if best_route['score'] < 2.5 else f"{YELLOW}PROCEED WITH CAUTION{RESET}" if best_route['score'] < 4.0 else f"{RED}HIGH RISK - AVOID IF POSSIBLE{RESET}"))
     
-    print("\n[ ROUTE MAP ]")
+    print(f"{CYAN}\n[ ROUTE MAP ]{RESET}")
     print(f" ( {best_route['path'][0]} )")
     for port in best_route['path'][1:]:
         print("    |")
@@ -384,6 +412,5 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         # This catches the Ctrl+C command and hides the ugly red error text
-        # TODO replace with a more graceful shutdown message and cleanup if needed
-        print("\n\n[!] Routing cancelled by user. Shutting down AquaPath AI safely...")
+        print(f"\n\n{YELLOW}[!] Program shutdown initiated. Shutting down AquaPath AI safely...{RESET}")
         sys.exit(0)
