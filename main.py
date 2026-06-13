@@ -83,34 +83,38 @@ MARITIME_NETWORK = {
 # THE AI SCORING ENGINE
 # ==========================================
 def evaluate_full_path(path):
+    """
+    Fetches live weather via APIs and traffic via CSV.
+    Calculates safety risk using our Machine Learning formulas.
+    """
     total_wind = 0
     total_wave = 0
     successful_weather_checks = 0
     
     total_traffic = 0
     successful_traffic_checks = 0
-    used_fallback = False  # NEW: Tracks if the API failed
     
-    # --- A. FETCH LIVE WEATHER ---
+    # --- A. FETCH LIVE WEATHER (Open-Meteo API) ---
     for port in path:
         pt = PORT_COORDINATES[port]
         weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={pt['lat']}&longitude={pt['lon']}&current=wind_speed_10m"
         marine_url = f"https://marine-api.open-meteo.com/v1/marine?latitude={pt['lat']}&longitude={pt['lon']}&current=wave_height"
         
         try:
-            wind_response = requests.get(weather_url, timeout=2)
-            wave_response = requests.get(marine_url, timeout=2)
+            # Increased timeout to 3 seconds for slower school Wi-Fi
+            wind_response = requests.get(weather_url, timeout=3)
+            wave_response = requests.get(marine_url, timeout=3)
             
+            # If a port is too far inland, marine API might return a 400 error.
+            # We only count it as successful if BOTH APIs return 200 OK.
             if wind_response.status_code == 200 and wave_response.status_code == 200:
                 total_wind += wind_response.json()["current"]["wind_speed_10m"]
                 total_wave += wave_response.json()["current"]["wave_height"]
                 successful_weather_checks += 1
-            else:
-                used_fallback = True
         except Exception:
-            used_fallback = True # Sets flag to True if internet drops
+            pass # Skip safely if there is no internet connection
 
-    # --- B. FETCH LOCAL TRAFFIC ---
+    # --- B. FETCH LOCAL TRAFFIC (CSV Database) ---
     for i in range(len(path) - 1):
         leg_start = path[i]
         leg_end = path[i+1]
@@ -127,12 +131,15 @@ def evaluate_full_path(path):
             pass 
 
     # --- C. CALCULATE AVERAGES ---
-    if successful_weather_checks > 0 and not used_fallback:
+    # BUG FIX: Only trigger the fallback warning if EVERY SINGLE port failed.
+    # If even one port succeeded, we use that live data!
+    if successful_weather_checks > 0:
+        used_fallback = False
         wind_speed = total_wind / successful_weather_checks
         wave_height = total_wave / successful_weather_checks
     else:
-        # Safe fallback values if API fails (Moderate Conditions)
-        wind_speed = 15 
+        used_fallback = True
+        wind_speed = 15.0 
         wave_height = 1.0 
         
     if successful_traffic_checks > 0:
@@ -223,18 +230,22 @@ def main():
     print("\n" + "="*50)
     
     # Get User Input
-    start_port = input("Enter Starting Port: ").strip().title()
+    while True:
+        start_port = input("Enter Starting Port: ").strip().title()
 
-    if start_port not in ports_list:
-        print("\n[!] Error: Invalid port selected. Please restart and check spelling.")
-        return
+        if start_port in ports_list:
+            break
+        else:
+            print("\n[!] Error: Invalid port selected. Please check spelling.")
 
-    end_port = input("Enter Destination Port: ").strip().title()
+    while True:
+        end_port = input("Enter Destination Port: ").strip().title()
     
-    if end_port not in ports_list:
-        print("\n[!] Error: Invalid port selected. Please restart and check spelling.")
-        return
-        
+        if end_port in ports_list:
+            break
+        else:
+            print("\n[!] Error: Invalid port selected. Please check spelling.")
+
     print("\n[System] Analyzing historical routes...")
     time.sleep(1)
     
@@ -321,4 +332,10 @@ def main():
     print("\nSafe travels! Thank you for using AquaPath AI.")
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        # This catches the Ctrl+C command and hides the ugly red error text
+        # TODO replace with a more graceful shutdown message and cleanup if needed
+        print("\n\n[!] Routing cancelled by user. Shutting down AquaPath AI safely...")
+        sys.exit(0)
