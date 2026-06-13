@@ -19,17 +19,17 @@ class Spinner:
             for char in self.spinner:
                 if not self.busy:
                     break
-                # \r forces the terminal to overwrite the current line
+                # \r overwrites the current line in the terminal
                 sys.stdout.write(f'\r[AI] {self.message}... {char}')
                 sys.stdout.flush()
                 time.sleep(self.delay)
-        # Clear the line completely when finished
-        sys.stdout.write('\r' + ' ' * (len(self.message) + 15) + '\r')
+                
+        # \033[K acts as an eraser to wipe the line clean when finished
+        sys.stdout.write('\r\033[K')
         sys.stdout.flush()
 
     def start(self):
         self.busy = True
-        # Launch the animation in a background thread
         threading.Thread(target=self.spin, daemon=True).start()
 
     def stop(self):
@@ -83,16 +83,15 @@ MARITIME_NETWORK = {
 # THE AI SCORING ENGINE
 # ==========================================
 def evaluate_full_path(path):
-    # Fetches live weather via API and local traffic via CSV database.
-    
     total_wind = 0
     total_wave = 0
     successful_weather_checks = 0
     
     total_traffic = 0
     successful_traffic_checks = 0
+    used_fallback = False  # NEW: Tracks if the API failed
     
-    # --- FETCH LIVE WEATHER (Open-Meteo API) ---
+    # --- A. FETCH LIVE WEATHER ---
     for port in path:
         pt = PORT_COORDINATES[port]
         weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={pt['lat']}&longitude={pt['lon']}&current=wind_speed_10m"
@@ -106,20 +105,20 @@ def evaluate_full_path(path):
                 total_wind += wind_response.json()["current"]["wind_speed_10m"]
                 total_wave += wave_response.json()["current"]["wave_height"]
                 successful_weather_checks += 1
+            else:
+                used_fallback = True
         except Exception:
-            pass # Weather fails silently to fallback data
+            used_fallback = True # Sets flag to True if internet drops
 
-    # --- FETCH LOCAL TRAFFIC (CSV Database) ---
+    # --- B. FETCH LOCAL TRAFFIC ---
     for i in range(len(path) - 1):
         leg_start = path[i]
         leg_end = path[i+1]
-        
         try:
             with open("traffic_data.csv", mode="r") as file:
                 reader = csv.reader(file)
-                next(reader) # Skip the header
+                next(reader) 
                 for row in reader:
-                    # Check if route matches (either direction)
                     if (row[0] == leg_start and row[1] == leg_end) or (row[0] == leg_end and row[1] == leg_start):
                         total_traffic += int(row[2])
                         successful_traffic_checks += 1
@@ -127,24 +126,21 @@ def evaluate_full_path(path):
         except FileNotFoundError:
             pass 
 
-    # --- CALCULATE ROUTE AVERAGES ---
-    if successful_weather_checks > 0:
+    # --- C. CALCULATE AVERAGES ---
+    if successful_weather_checks > 0 and not used_fallback:
         wind_speed = total_wind / successful_weather_checks
-        wave_height = round(total_wave / successful_weather_checks, 1)
+        wave_height = total_wave / successful_weather_checks
     else:
-        # Safe fallback values if API fails completely
-        print("\n[!] Warning: Unable to fetch live weather data. Using fallback values.")
+        # Safe fallback values if API fails (Moderate Conditions)
         wind_speed = 15 
         wave_height = 1.0 
         
     if successful_traffic_checks > 0:
-        traffic_density = int(total_traffic / successful_traffic_checks)
+        traffic_density = total_traffic / successful_traffic_checks
     else:
-        traffic_density = 20 # Safe fallback if route isn't in CSV
+        traffic_density = 20 
 
-    # --- APPLY SCORING LOGIC (Machine Learning Equations) ---
-    
-    # Weather Risk (Calculated via Orange3 Linear Regression)
+    # --- D. APPLY MACHINE LEARNING FORMULAS ---
     weather_risk = (wave_height * 0.5107) + (wind_speed * 0.024) + 0.0105
     
     # Clamp the risk between 0.0 and 5.0
@@ -159,7 +155,8 @@ def evaluate_full_path(path):
     # Final Hybrid Score (65% Weather, 35% Traffic)
     final_score = (weather_risk * 0.65) + (traffic_risk * 0.35)
     
-    return round(final_score, 2), wave_height, round(wind_speed, 1), int(traffic_density)
+    # NEW: Returns the 'used_fallback' flag as the 5th item
+    return round(final_score, 2), round(wave_height, 1), round(wind_speed, 1), int(traffic_density), used_fallback
 
 # ==========================================
 # THE PATHFINDING ALGORITHM (DFS)
@@ -269,19 +266,6 @@ def main():
     
     # --- SHOW THE DISCOVERED ROUTES FIRST ---
     for idx, route_data in enumerate(top_shortest_routes):
-        path_string = " -> ".join(route_data["path"])
-        distance = route_data["distance"]
-        print(f"Option {idx + 1}: {path_string}")
-        print(f"   ↳ Distance: {distance} Nautical Miles\n")
-        time.sleep(0.5)
-
-    # --- RUN AI EVALUATION WITH LOADING SPINNER ---
-    scored_routes = []
-    print("="*50)
-    print(" 🧠 RUNNING AI SAFETY EVALUATION ")
-    print("="*50)
-    
-    for idx, route_data in enumerate(top_shortest_routes):
         path = route_data["path"]
         distance = route_data["distance"]
         path_string = " -> ".join(path)
@@ -290,13 +274,13 @@ def main():
         spinner = Spinner(message=f"Evaluating Option {idx + 1}")
         spinner.start()
         
-        # The program will pause here to fetch APIs while the spinner runs!
-        avg_score, avg_wave, avg_wind, avg_traffic = evaluate_full_path(path)
+        try:
+            # NEW: Catches the 5th variable (used_fallback)
+            avg_score, avg_wave, avg_wind, avg_traffic, used_fallback = evaluate_full_path(path)
+        finally:
+            spinner.stop() # Spinner erases completely here!
         
-        # Stop the spinner and clear the line
-        spinner.stop()
-        
-        # Save the scores
+        # Save the route data
         scored_routes.append({
             "path": path, 
             "score": avg_score, 
@@ -304,8 +288,13 @@ def main():
             "distance": distance
         })
         
-        # Print the final results for this specific route
+        # Print the results cleanly AFTER the spinner is gone
         print(f"✅ Option {idx + 1} Evaluated: {path_string}")
+        
+        # Print the warning if the API failed
+        if used_fallback:
+            print("   [!] WARNING: Unable to fetch live data. Using fallback weather values.")
+            
         print(f"   -> Avg Weather: Waves {avg_wave}m | Wind {avg_wind}km/h")
         print(f"   -> Avg Traffic: {avg_traffic} active vessels detected")
         print(f"   -> Warning Level: {avg_score}/5.00\n")
