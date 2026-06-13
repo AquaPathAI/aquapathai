@@ -8,13 +8,27 @@ import threading
 # CLI LOADING ANIMATION (Multithreading)
 # ==========================================
 class Spinner:
+    """
+    A terminal animation class that runs in the background to indicate 
+    active processing without freezing the main application thread.
+    """
     def __init__(self, message="Evaluating"):
+        """
+        Initializes the Spinner animation.
+
+        Args:
+            message (str): The text to display alongside the spinning animation.
+        """
         self.spinner = ['-', '\\', '|', '/']
         self.delay = 0.1
         self.busy = False
         self.message = message
 
     def spin(self):
+        """
+        The core animation loop. Iterates through the spinner characters 
+        and constantly overwrites the terminal line to create motion.
+        """
         while self.busy:
             for char in self.spinner:
                 if not self.busy:
@@ -29,10 +43,12 @@ class Spinner:
         sys.stdout.flush()
 
     def start(self):
+        """Starts the spinner animation in a daemon background thread."""
         self.busy = True
         threading.Thread(target=self.spin, daemon=True).start()
 
     def stop(self):
+        """Stops the spinner animation and cleans up the terminal line."""
         self.busy = False
         time.sleep(self.delay)
 
@@ -86,6 +102,12 @@ def evaluate_full_path(path):
     """
     Fetches live weather via APIs and traffic via CSV.
     Calculates safety risk using our Machine Learning formulas.
+    
+    Args:
+        path (list): A list of port names representing the maritime route.
+        
+    Returns:
+        tuple: (final_score, avg_wave, avg_wind, traffic_density, used_fallback)
     """
     total_wind = 0
     total_wave = 0
@@ -169,7 +191,18 @@ def evaluate_full_path(path):
 # THE PATHFINDING ALGORITHM (DFS)
 # ==========================================
 def find_all_paths(graph, start, end, path=None):
-    # Finds all possible routes between the start and end ports without looping.
+    """
+    Finds all possible routes between the start and end ports without looping.
+    
+    Args:
+        graph (dict): The adjacency list representing the maritime network.
+        start (str): The starting port for the route.
+        end (str): The destination port for the route.
+        path (list, optional): The current path history to prevent cycles.
+        
+    Returns:
+        list: A list of all valid paths connecting the start and end ports.
+    """
     if path is None:
         path = []
         
@@ -190,7 +223,15 @@ def find_all_paths(graph, start, end, path=None):
     return paths
 
 def calculate_total_distance(path):
-    # Calculates the total nautical miles of a given path.
+    """
+    Calculates the total nautical miles of a given path.
+    
+    Args:
+        path (list): A list of port names representing a valid route.
+        
+    Returns:
+        int: The accumulated distance of the entire journey in Nautical Miles.
+    """
     total_distance = 0
     for i in range(len(path) - 1):
         port_a = path[i]
@@ -202,9 +243,11 @@ def calculate_total_distance(path):
 # COMMAND-LINE INTERFACE (UI)
 # ==========================================
 def clear_screen():
+    """Clears the terminal screen by printing empty lines."""
     print("\n" * 50)
 
 def print_logo():
+    """Prints the AquaPath AI ASCII text logo to the console."""
     print("""
 ***************************************************
 * *
@@ -216,6 +259,11 @@ def print_logo():
     """)
 
 def main():
+    """
+    The main execution function of the application.
+    Handles user input formatting, computes shortest physical routes, runs
+    safety evaluations via the ML engine, and outputs the optimal choice.
+    """
     clear_screen()
     print_logo()
     
