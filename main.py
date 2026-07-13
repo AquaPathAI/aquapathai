@@ -1,3 +1,6 @@
+# ==========================================
+# IMPORTS
+# ==========================================
 import time
 import requests
 import csv
@@ -10,7 +13,7 @@ import threading
 class Spinner:
     """
     A terminal animation class that runs in the background to indicate 
-    active processing without freezing the main application thread.
+    processing without freezing the main application thread.
     """
     def __init__(self, message="Evaluating"):
         """
@@ -19,7 +22,7 @@ class Spinner:
         Args:
             message (str): The text to display alongside the spinning animation.
         """
-        self.spinner = ['-', '\\', '|', '/'] # The classic spinner characters
+        self.spinner = ['-', '\\', '|', '/'] # The spinner characters
         self.delay = 0.1 # Delay between spinner updates (in seconds)
         self.busy = False # Flag to control the spinner loop
         self.message = message # Custom message to show next to the spinner
@@ -32,21 +35,22 @@ class Spinner:
         while self.busy:
             for char in self.spinner:
                 if not self.busy:
-                    # If the busy flag was turned off during the sleep, we want to exit immediately
+                    # If the busy flag was turned off during the sleep, exit immediately
                     break
                 # \r overwrites the current line in the terminal
-                sys.stdout.write(f'\r{CLI_COLORS["CYAN"]}[AI] {self.message}... {char}{CLI_COLORS["RESET"]}')
+                sys.stdout.write(f"\r{CLI_COLORS["CYAN"]}[AI] {self.message}... {char}{CLI_COLORS["RESET"]}")
                 sys.stdout.flush()
                 time.sleep(self.delay)
                 
         # \033[K acts as an eraser to wipe the line clean when finished
-        sys.stdout.write('\r\033[K')
+        sys.stdout.write("\r\033[K")
         sys.stdout.flush()
 
     def start(self):
         """Starts the spinner animation in a daemon background thread."""
         self.busy = True
-        # A daemon thread runs in the background and automatically exits when the main program ends
+        # A daemon thread runs in the background 
+        # and automatically exits when the main program ends
         threading.Thread(target=self.spin, daemon=True).start()
 
     def stop(self):
@@ -134,27 +138,29 @@ def evaluate_full_path(path):
     successful_wind_checks = 0
     successful_wave_checks = 0
 
-    # Traffic data is only available for legs between ports, so we count those separately
+    # Traffic data is only available for legs between ports, 
+    # hence they are counted separately to calculate
+    # an average traffic density across the entire route.
     total_traffic = 0
     successful_traffic_checks = 0
     
     # --- FETCH LIVE WEATHER (Open-Meteo API) ---
     for port in path:
         pt = PORT_COORDINATES[port]
-        weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={pt['lat']}&longitude={pt['lon']}&current=wind_speed_10m"
-        marine_url = f"https://marine-api.open-meteo.com/v1/marine?latitude={pt['lat']}&longitude={pt['lon']}&current=wave_height"
-        
+        weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={pt["lat"]}&longitude={pt["lon"]}&current=wind_speed_10m"
+        marine_url = f"https://marine-api.open-meteo.com/v1/marine?latitude={pt["lat"]}&longitude={pt["lon"]}&current=wave_height"
+
         try:
             # Timeout of 3 seconds to prevent hanging if the API is unreachable
             wind_response = requests.get(weather_url, timeout=3)
             wave_response = requests.get(marine_url, timeout=3)
             
+            # Only add to the total if a valid response was received (status code 200), 
+            # and count how many successful checks happened for averaging later
             if wind_response.status_code == 200:
-                # We only add to the total if we got a valid response, and we count how many successful checks we had for averaging later
                 total_wind += wind_response.json()["current"]["wind_speed_10m"]
                 successful_wind_checks += 1
             if wave_response.status_code == 200:
-                # Same for wave height - only add if we got a valid response, and count successful checks
                 total_wave += wave_response.json()["current"]["wave_height"]
                 successful_wave_checks += 1
         except Exception:
@@ -162,7 +168,8 @@ def evaluate_full_path(path):
 
     # --- FETCH LOCAL TRAFFIC (CSV Database) ---
     for i in range(len(path) - 1):
-        # Each leg of the journey is between two ports, so we check the traffic data for each leg separately. 
+        # Each leg of the journey is between two ports, 
+        # so check the traffic data for each leg separately. 
         # This allows us to average traffic across the entire route.
         leg_start = path[i]
         leg_end = path[i+1]
@@ -176,11 +183,10 @@ def evaluate_full_path(path):
                         successful_traffic_checks += 1
                         break
         except FileNotFoundError:
-            pass 
+            pass # Skip safely if the CSV file is missing
 
     # --- CALCULATE AVERAGES ---
-    # Only trigger the fallback warning if EVERY SINGLE port failed.
-    # If even one port succeeded, we use that live data!
+    # Trigger the fallback warning if every single port failed.
     if successful_wind_checks > 0:
         used_fallback = False
         wind_speed = total_wind / successful_wind_checks
@@ -216,7 +222,9 @@ def evaluate_full_path(path):
     # Uses custom weights to balance the importance of weather and traffic
     final_score = (weather_risk * 0.65) + (traffic_risk * 0.35)
     
-    # Returns the final safety score, the average wave height, average wind speed, traffic density, and whether we had to use fallback values for weather
+    # Returns the final safety score, the average wave height, 
+    # average wind speed, traffic density, 
+    # and whether fallback values were used due to API failure.
     return round(final_score, 2), round(wave_height, 1), round(wind_speed, 1), int(traffic_density), used_fallback
 
 
@@ -230,20 +238,21 @@ def find_best_route(scored_routes, tolerance=0.25):
     Returns:
         dict: The dictionary representing the best route with keys 'path', 'score', 'string', and 'distance'.
     """
-    # We start by assuming the first route in our list is the best one
+    # Start by assuming the first route in our list is the best one
     best_route = scored_routes[0]
 
     # Loop through the rest of the evaluated routes to find the true optimal choice
     for route in scored_routes[1:]:
         # Condition A: If this route is strictly safer than our current best, select it
         if route['score'] < best_route['score']:
-            # Tie-breaker Check: Is the old route's score within the tolerance of this new route?
+            # Tie-breaker: Is the old route's score within the tolerance of this new route?
             # And is the old route physically shorter? If so, keep the shorter one!
             if abs(best_route['score'] - route['score']) <= tolerance and best_route['distance'] < route['distance']:
                 continue  # Skip updating; stick with the shorter route
             best_route = route
             
-        # Condition B: If the safety scores are practically a tie (within the tolerance of each other)
+        # Condition B: If the safety scores are practically a tie 
+        # (within the tolerance of each other)
         elif abs(route['score'] - best_route['score']) <= tolerance:
             # If the alternative route is physically shorter, pick it as the tie-breaker
             if route['distance'] < best_route['distance']:
@@ -272,27 +281,37 @@ def find_all_paths(graph, start, end, path=None):
     if path is None:
         path = []
     
-    # Add the current port to the path history. This prevents us from visiting the same port twice and creating loops.
+    # Add the current port to the path history. 
+    # This prevents us from visiting the same port twice and creating loops.
     path = path + [start]
     
-    # Base Case: If the start and end ports are the same, we have found a valid path. Return it as a single-item list.
+    # Base Case: If the start and end ports are the same, a valid route has been found. 
+    # Return it as a single-item list.
     if start == end:
         return [path]
 
-    # If the starting port is not in the graph, it means there are no routes from this port. Return an empty list to indicate failure.        
+    # If the starting port is not in the graph, it means there are no routes from this port. 
+    # Return an empty list to indicate failure.        
     if start not in graph:
         return []
     
-    # Recursive Case: Explore each neighboring port (connected via an edge) and continue searching for valid paths to the destination.
+    # Recursive Case: Explore each neighboring port (connected via an edge) 
+    # and continue searching for valid paths to the destination.
     paths = []
     for node in graph[start]:
-        # Only continue down this path if we haven't already visited this port in our current path history. This ensures we don't create cycles.
+        # Only continue down this path if this port 
+        # has not already been visited in our current path history. 
+        # This ensures that cycles are avoided and only valid routes are considered.
         if node not in path:
-            # For each valid neighboring port, we make a recursive call to find all paths from that neighbor to the destination. 
-            # We also pass along the current path history so that it can be updated in deeper recursive calls.
+            # For each valid neighboring port, make a recursive call 
+            # to find all paths from that neighbor to the destination. 
+            # Also pass along the current path history 
+            # so that it can be updated in deeper recursive calls.
             newpaths = find_all_paths(graph, node, end, path)
-            # Add any new valid paths found from this neighbor to our overall list of paths. 
-            # This builds up the complete list of valid routes from the start to the end port.
+            # Add any new valid paths found from this neighbour 
+            # to our overall list of paths. 
+            # This builds up the complete list of valid routes
+            # from the start to the end port.
             for newpath in newpaths:
                 paths.append(newpath)
     return paths
@@ -307,9 +326,12 @@ def calculate_total_distance(path):
     Returns:
         int: The accumulated distance of the entire journey in Nautical Miles.
     """
-    # Initialize a distance accumulator to sum up the distances between each pair of ports in the path
+    # Initialize a distance accumulator to sum up 
+    # the distances between each pair of ports in the path
     total_distance = 0
-    # We loop through the path list, taking pairs of consecutive ports (port_a and port_b) and looking up the distance between them in our MARITIME_NETWORK graph.
+    # Loop through the path list, 
+    # taking pairs of consecutive ports (port_a and port_b) 
+    # and looking up the distance between them in our MARITIME_NETWORK graph.
     for i in range(len(path) - 1):
         port_a = path[i]
         port_b = path[i+1]
@@ -351,26 +373,29 @@ def main():
         col1 = ports_list[i]
         col2 = ports_list[i+1] if i+1 < len(ports_list) else ''
         col3 = ports_list[i+2] if i+2 < len(ports_list) else ''
-        print(f"  {col1:<15} {col2:<15} {col3:<15}")
+        # The :<15 format specifier left-aligns the text in a 15-character wide column,
+        print(f"  {col1:<15} {col2:<15} {col3:<15}") 
     
     # A visual separator to distinguish the port list from the user input section
     print("\n" + "="*50)
     
     # Get User Input
     try:
-        # We use a loop to continuously prompt the user until they provide valid input for both the starting and destination ports.
+        # Use a loop to continuously prompt the user until
+        # they provide valid input for both the starting and destination ports.
         while True:
             start_port = input("Enter Starting Port: ").strip().title()
 
             # Check if the entered port is in our list of valid ports. 
-            # If it is, we break out of the loop and move on to the next input. 
-            # If not, we show an error message and prompt again.
+            # If it is, break out of the loop and move on to the next input. 
+            # If not, show an error message and prompt again.
             if start_port in ports_list:
                 break
             else:
                 print(f"\n{CLI_COLORS['RED']}[!] Error: Invalid port selected. Please check spelling.{CLI_COLORS['RESET']}")
 
-        # We repeat the same process for the destination port, ensuring that the user selects valid ports from our predefined list.
+        # Repeat the same process for the destination port, 
+        # ensuring that the user selects valid ports from the predefined list.
         while True:
             end_port = input("Enter Destination Port: ").strip().title()
         
@@ -379,18 +404,20 @@ def main():
             else:
                 print(f"\n{CLI_COLORS['RED']}[!] Error: Invalid port selected. Please check spelling.{CLI_COLORS['RESET']}")
     except KeyboardInterrupt:
-        # This allows the user to exit gracefully if they decide to cancel the input process (e.g., by pressing Ctrl+C).
+        # This allows the user to exit gracefully 
+        # if they decide to cancel the input process (e.g., by pressing Ctrl+C).
         print(f"\n\n{CLI_COLORS['YELLOW']}[!] Program shutdown initiated. Shutting down AquaPath AI safely...{CLI_COLORS['RESET']}")
         return
 
-    # Show a loading message while we compute the possible routes.
+    # Show a loading message while computing the possible routes.
     print(f"\n{CLI_COLORS['CYAN']}[System] Analyzing historical routes...{CLI_COLORS['RESET']}")
     time.sleep(1)
     
     # Find paths
     possible_routes = find_all_paths(MARITIME_NETWORK, start_port, end_port)
     
-    # If there are no valid routes found between the selected ports, we inform the user and exit the program gracefully.
+    # If there are no valid routes found between the selected ports, 
+    # inform the user and exit the program gracefully.
     if not possible_routes:
         print(f"\n{CLI_COLORS['RED']}[!] No valid maritime route found between these ports.{CLI_COLORS['RESET']}")
         return
@@ -418,14 +445,16 @@ def main():
         path = route_data["path"]
         distance = route_data["distance"]
         path_string = " -> ".join(path)
-        print(f"Option {idx + 1}: {path_string} | Distance: {distance} NM")
+        print(f"Option {idx + 1}: {path_string}\n    Distance: {distance} NM")
         time.sleep(0.5)
     
-    # A visual separator to distinguish the route discovery phase from the safety evaluation phase
+    # A visual separator to distinguish the route discovery phase from 
+    # the safety evaluation phase
     print("\n" + "="*50)
 
     # Run the safety evaluation for each of the top 3 shortest routes, 
-    # Showing an animated spinner while we fetch live data and compute the scores.
+    # Showing an animated spinner while 
+    # live data is being fetched and calculations are being performed.
     for idx, route_data in enumerate(top_shortest_routes):
         path = route_data["path"]
         distance = route_data["distance"]
@@ -436,10 +465,12 @@ def main():
         spinner.start()
         
         try:
-            # This function call will fetch live weather and traffic data, apply our ML formulas, and return the average safety score along with the raw data for waves, wind, and traffic.
+            # This function call will fetch live weather and traffic data, 
+            # apply our ML formulas, and return the average safety score along with 
+            # the raw data for waves, wind, and traffic.
             avg_score, avg_wave, avg_wind, avg_traffic, used_fallback = evaluate_full_path(path)
         finally:
-            spinner.stop() # Spinner erases completely here!
+            spinner.stop() # Spinner erases completely here
         
         # Save the route data
         scored_routes.append({
@@ -449,14 +480,15 @@ def main():
             "distance": distance
         })
         
-        # Print the results cleanly AFTER the spinner is gone
+        # Print the results cleanly after the spinner is gone
         print(f"{CLI_COLORS['GREEN']}✅ Option {idx + 1} Evaluated: {path_string}{CLI_COLORS['RESET']}")
         
         # Print the warning if the API failed
         if used_fallback:
             print(f"   {CLI_COLORS['YELLOW']}[!] WARNING: Unable to fetch live data. Using fallback weather values.{CLI_COLORS['RESET']}")
         
-        # Print the average conditions and the calculated warning level for this route, giving the user insight into why the score is what it is.
+        # Print the average conditions and the calculated warning level for this route, 
+        # giving the user insight into why the score is what it is.
         print(f"   -> Avg Weather: Waves {avg_wave}m | Wind {avg_wind}km/h")
         print(f"   -> Avg Traffic: {avg_traffic} active vessels detected")
         print(f"   -> Warning Level: {avg_score}/5.00\n")
@@ -466,22 +498,15 @@ def main():
     # with a tie-breaker for distance if scores are close
     best_route = find_best_route(scored_routes)
     
-    # Final Output: Show the optimal route with its safety score, a color-coded safety status, and a visual map of the ports along the route.
+    # Final Output: Show the optimal route with its safety score, 
+    # a color-coded safety status, and a visual map of the ports along the route.
     print(CLI_COLORS['GREEN'] + "\n" + "="*50)
     print("✅ OPTIMAL ROUTE SELECTED")
     print("="*50 + CLI_COLORS['RESET'])
     print(f"Path: {best_route['string']}")
     print(f"Average Warning Level: {best_route['score']} / 5.00")
-    print("Safety Status: " + (f"{CLI_COLORS['GREEN']}OPTIMAL{CLI_COLORS['RESET']}" if best_route['score'] < 2.5 else f"{CLI_COLORS['YELLOW']}PROCEED WITH CAUTION{CLI_COLORS['RESET']}" if best_route['score'] < 4.0 else f"{CLI_COLORS['RED']}HIGH RISK - AVOID IF POSSIBLE{CLI_COLORS['RESET']}"))
-    
-    # A visual representation of the route map, showing the ports in a vertical flow with arrows indicating the direction of travel. 
-    print(f"{CLI_COLORS['CYAN']}\n[ ROUTE MAP ]{CLI_COLORS['RESET']}")
-    for port in best_route['path']:
-        print(f" [ {port} ]")
-        if port != best_route['path'][-1]: # Don't print an arrow after the last port
-            print("    |")
-            print("    V")
     print(f"Total Distance: {best_route['distance']} NM")
+    print("Safety Status: " + (f"{CLI_COLORS['GREEN']}OPTIMAL{CLI_COLORS['RESET']}" if best_route['score'] < 2.5 else f"{CLI_COLORS['YELLOW']}PROCEED WITH CAUTION{CLI_COLORS['RESET']}" if best_route['score'] < 4.0 else f"{CLI_COLORS['RED']}HIGH RISK - AVOID IF POSSIBLE{CLI_COLORS['RESET']}"))
         
     print("\nSafe travels! Thank you for using AquaPath AI.")
 
