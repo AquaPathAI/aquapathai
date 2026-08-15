@@ -1,11 +1,11 @@
 # ==========================================
 # IMPORTS
 # ==========================================
-import time
-import requests
-import csv
-import sys
-import threading
+import time       # For sleep() delays
+import requests   # For fetching live weather data from APIs
+import csv        # For reading local traffic data from CSV files
+import sys        # For terminal output and flushing
+import threading  # For running the spinner animation in a separate thread
 
 # ==========================================
 # CLI LOADING ANIMATION (Multithreading)
@@ -16,7 +16,8 @@ class Spinner:
     def __init__(self, message="Evaluating"):
         # Initializes the Spinner animation.
         # Args:
-        #    message (str): The text to display alongside the spinning animation.
+        #    message: The text to display alongside the spinning animation.
+
         self.spinner = ['-', '\\', '|', '/'] # The spinner characters
         self.delay = 0.1 # Delay between spinner updates (in seconds)
         self.busy = False # Flag to control the spinner loop
@@ -25,6 +26,7 @@ class Spinner:
     def spin(self):
         # The core animation loop. Iterates through the spinner characters 
         # and constantly overwrites the terminal line to create motion.
+        
         while self.busy:
             for char in self.spinner:
                 if not self.busy:
@@ -32,15 +34,16 @@ class Spinner:
                     break
                 # \r overwrites the current line in the terminal
                 sys.stdout.write(f"\r{CLI_COLORS["CYAN"]}[AI] {self.message}... {char}{CLI_COLORS["RESET"]}")
-                sys.stdout.flush()
+                sys.stdout.flush() # Forces the output to appear immediately in the terminal
                 time.sleep(self.delay)
                 
         # \033[K acts as an eraser to wipe the line clean when finished
         sys.stdout.write("\r\033[K")
-        sys.stdout.flush()
+        sys.stdout.flush() # Forces the terminal to clear the line immediately
 
     def start(self):
         # Starts the spinner animation in a daemon background thread.
+
         self.busy = True
         # A daemon thread runs in the background 
         # and automatically exits when the main program ends
@@ -48,12 +51,14 @@ class Spinner:
 
     def stop(self):
         # Stops the spinner animation and cleans up the terminal line.
+
         self.busy = False
         time.sleep(self.delay)
 
 # ==========================================
 # CLI COLOR CODES (ANSI Escape Sequences)
 # ==========================================
+# These colour codes are used to change the colour of the terminal output.
 CLI_COLORS = {
     "BOLD": "\033[1m",
     "CYAN": "\033[36m",
@@ -137,7 +142,9 @@ def evaluate_full_path(path):
     # --- FETCH LIVE WEATHER (Open-Meteo API) ---
     for port in path:
         pt = PORT_COORDINATES[port]
+        # Wind Speed API
         weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={pt["lat"]}&longitude={pt["lon"]}&current=wind_speed_10m"
+        # Wave Height API
         marine_url = f"https://marine-api.open-meteo.com/v1/marine?latitude={pt["lat"]}&longitude={pt["lon"]}&current=wave_height"
 
         try:

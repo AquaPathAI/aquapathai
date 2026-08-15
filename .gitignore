@@ -1,3 +1,4 @@
 .env
 ai program.py
 fetch.py
+train_ai.py
