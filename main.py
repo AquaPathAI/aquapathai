@@ -11,27 +11,20 @@ import threading
 # CLI LOADING ANIMATION (Multithreading)
 # ==========================================
 class Spinner:
-    """
-    A terminal animation class that runs in the background to indicate 
-    processing without freezing the main application thread.
-    """
+    # A terminal animation class that runs in the background to indicate 
+    # processing without freezing the main application thread.
     def __init__(self, message="Evaluating"):
-        """
-        Initializes the Spinner animation.
-
-        Args:
-            message (str): The text to display alongside the spinning animation.
-        """
+        # Initializes the Spinner animation.
+        # Args:
+        #    message (str): The text to display alongside the spinning animation.
         self.spinner = ['-', '\\', '|', '/'] # The spinner characters
         self.delay = 0.1 # Delay between spinner updates (in seconds)
         self.busy = False # Flag to control the spinner loop
         self.message = message # Custom message to show next to the spinner
 
     def spin(self):
-        """
-        The core animation loop. Iterates through the spinner characters 
-        and constantly overwrites the terminal line to create motion.
-        """
+        # The core animation loop. Iterates through the spinner characters 
+        # and constantly overwrites the terminal line to create motion.
         while self.busy:
             for char in self.spinner:
                 if not self.busy:
@@ -47,14 +40,14 @@ class Spinner:
         sys.stdout.flush()
 
     def start(self):
-        """Starts the spinner animation in a daemon background thread."""
+        # Starts the spinner animation in a daemon background thread.
         self.busy = True
         # A daemon thread runs in the background 
         # and automatically exits when the main program ends
         threading.Thread(target=self.spin, daemon=True).start()
 
     def stop(self):
-        """Stops the spinner animation and cleans up the terminal line."""
+        # Stops the spinner animation and cleans up the terminal line.
         self.busy = False
         time.sleep(self.delay)
 
@@ -122,16 +115,13 @@ MARITIME_NETWORK = {
 # THE AI SCORING ENGINE
 # ==========================================
 def evaluate_full_path(path):
-    """
-    Fetches live weather via APIs and traffic via CSV.
-    Calculates safety risk using our Machine Learning formulas.
-    
-    Args:
-        path (list): A list of port names representing the maritime route.
-        
-    Returns:
-        tuple: (final_score, avg_wave, avg_wind, traffic_density, used_fallback)
-    """
+    # Fetches live weather via APIs and traffic via CSV.
+    # Calculates safety risk using our Machine Learning formulas.
+    # Args:
+    #    path (list): A list of port names representing the maritime route.
+    # Returns:
+    #    tuple: (final_score, avg_wave, avg_wind, traffic_density, used_fallback)
+
     # Initialize accumulators and counters for averaging
     total_wind = 0
     total_wave = 0
@@ -229,15 +219,14 @@ def evaluate_full_path(path):
 
 
 def find_best_route(scored_routes, tolerance=0.25):
-    """
-    Selects the best route based on the lowest safety score, with a tie-breaker for distance if scores are close.
+    # Selects the best route based on the lowest safety score, with a tie-breaker for distance if scores are close.
     
-    Args:
-        scored_routes (list): A list of dictionaries containing route paths, scores, and distances.
-        tolerance (float): The acceptable difference in safety scores to consider routes as tied.
-    Returns:
-        dict: The dictionary representing the best route with keys 'path', 'score', 'string', and 'distance'.
-    """
+    # Args:
+    #     scored_routes (list): A list of dictionaries containing route paths, scores, and distances.
+    #     tolerance (float): The acceptable difference in safety scores to consider routes as tied.
+    # Returns:
+    #    dict: The dictionary representing the best route with keys 'path', 'score', 'string', and 'distance'.
+
     # Start by assuming the first route in our list is the best one
     best_route = scored_routes[0]
 
@@ -264,18 +253,14 @@ def find_best_route(scored_routes, tolerance=0.25):
 # THE PATHFINDING ALGORITHM (DFS)
 # ==========================================
 def find_all_paths(graph, start, end, path=None):
-    """
-    Finds all possible routes between the start and end ports without looping.
-    
-    Args:
-        graph (dict): The adjacency list representing the maritime network.
-        start (str): The starting port for the route.
-        end (str): The destination port for the route.
-        path (list, optional): The current path history to prevent cycles.
-        
-    Returns:
-        list: A list of all valid paths connecting the start and end ports.
-    """
+    # Finds all possible routes between the start and end ports without looping.
+    # Args:
+    #     graph (dict): The adjacency list representing the maritime network.
+    #     start (str): The starting port for the route.
+    #     end (str): The destination port for the route.
+    #     path (list, optional): The current path history to prevent cycles.
+    # Returns:
+    #     list: A list of all valid paths connecting the start and end ports.
 
     # Initialize the path list on the first call 
     if path is None:
@@ -317,15 +302,13 @@ def find_all_paths(graph, start, end, path=None):
     return paths
 
 def calculate_total_distance(path):
-    """
-    Calculates the total nautical miles of a given path.
-    
-    Args:
-        path (list): A list of port names representing a valid route.
-        
-    Returns:
-        int: The accumulated distance of the entire journey in Nautical Miles.
-    """
+    # Calculates the total nautical miles of a given path.
+    # Args:
+    #     path (list): A list of port names representing a valid route.
+    # Returns:
+    #     int: The accumulated distance of the entire journey in Nautical Miles.
+
+
     # Initialize a distance accumulator to sum up 
     # the distances between each pair of ports in the path
     total_distance = 0
@@ -342,11 +325,11 @@ def calculate_total_distance(path):
 # COMMAND-LINE INTERFACE (UI)
 # ==========================================
 def clear_screen():
-    """Clears the terminal screen by printing empty lines."""
+    # Clears the terminal screen by printing empty lines.
     print("\n" * 50)
 
 def print_logo():
-    """Prints the AquaPath AI ASCII text logo to the console with colors."""
+    # Prints the AquaPath AI ASCII text logo to the console with colors.
     
     print(f"{CLI_COLORS['CYAN']}{CLI_COLORS['BOLD']}***************************************************")
     print(f"* *")
@@ -357,11 +340,10 @@ def print_logo():
     print(f"***************************************************{CLI_COLORS['RESET']}")
 
 def main():
-    """
-    The main execution function of the application.
-    Handles user input formatting, computes shortest physical routes, runs
-    safety evaluations via the ML engine, and outputs the optimal choice.
-    """
+    # The main execution function of the application.
+    # Handles user input formatting, computes shortest physical routes, runs
+    # safety evaluations via the ML engine, and outputs the optimal choice.
+
     # Initial UI Setup
     clear_screen()
     print_logo()
