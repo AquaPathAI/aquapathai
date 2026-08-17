@@ -74,18 +74,18 @@ CLI_COLORS = {
 # ==========================================
 PORT_COORDINATES = {
     # --- ASIA & MIDDLE EAST ---
-    "Mumbai": {"lat": 18.94, "lon": 72.83}, "Singapore": {"lat": 1.29, "lon": 103.85},
-    "Shanghai": {"lat": 31.23, "lon": 121.47}, "Tokyo": {"lat": 35.67, "lon": 139.65},
-    "Dubai": {"lat": 25.20, "lon": 55.27}, 
+    "Mumbai": (18.94, 72.83), "Singapore": (1.29, 103.85),
+    "Shanghai": (31.23, 121.47), "Tokyo": (35.67, 139.65),
+    "Dubai": (25.20, 55.27), 
     # --- AFRICA & CHOKEPOINTS ---
-    "Aden": {"lat": 12.79, "lon": 44.98}, "Suez": {"lat": 29.96, "lon": 32.55}, 
-    "Cape Town": {"lat": -33.92, "lon": 18.42},
+    "Aden": (12.79, 44.98), "Suez": (29.96, 32.55), 
+    "Cape Town": (-33.92, 18.42),
     # --- EUROPE ---
-    "Gibraltar": {"lat": 36.14, "lon": -5.35}, "Rotterdam": {"lat": 51.92, "lon": 4.48},
-    "Hamburg": {"lat": 53.55, "lon": 9.99}, 
+    "Gibraltar": (36.14, -5.35), "Rotterdam": (51.92, 4.48),
+    "Hamburg": (53.55, 9.99), 
     # --- THE AMERICAS ---
-    "New York": {"lat": 40.71, "lon": -74.00}, "Los Angeles": {"lat": 34.05, "lon": -118.24}, 
-    "Panama Canal": {"lat": 9.14, "lon": -79.72}, "Santos": {"lat": -23.96, "lon": -46.33}
+    "New York": (40.71, -74.00), "Los Angeles": (34.05, -118.24), 
+    "Panama Canal": (9.14, -79.72), "Santos": (-23.96, -46.33)
 }
 
 # ==========================================
@@ -145,9 +145,9 @@ def evaluate_full_path(path):
     for port in path:
         pt = PORT_COORDINATES[port]
         # Wind Speed API
-        weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={pt["lat"]}&longitude={pt["lon"]}&current=wind_speed_10m"
+        weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={pt[0]}&longitude={pt[1]}&current=wind_speed_10m"
         # Wave Height API
-        marine_url = f"https://marine-api.open-meteo.com/v1/marine?latitude={pt["lat"]}&longitude={pt["lon"]}&current=wave_height"
+        marine_url = f"https://marine-api.open-meteo.com/v1/marine?latitude={pt[0]}&longitude={pt[1]}&current=wave_height"
 
         try:
             # Timeout of 3 seconds to prevent hanging if the API is unreachable
@@ -264,7 +264,7 @@ def find_best_route(scored_routes, tolerance=0.25):
 def find_all_paths(graph, start, end, path=None):
     # Finds all possible routes between the start and end ports without looping.
     # Args:
-    #     graph (dict): The adjacency list representing the maritime network.
+    #     graph (dict): The network of ports (nodes) and their connections (edges).
     #     start (str): The starting port for the route.
     #     end (str): The destination port for the route.
     #     path (list, optional): The current path history to prevent cycles.
