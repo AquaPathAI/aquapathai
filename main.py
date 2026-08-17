@@ -8,7 +8,7 @@ import sys        # For terminal output and flushing
 import threading  # For running the spinner animation in a separate thread
 
 # ==========================================
-# CLI LOADING ANIMATION (Multithreading)
+# CLI LOADING ANIMATION
 # ==========================================
 class Spinner:
     # A terminal animation class that runs in the background to indicate 
@@ -20,7 +20,7 @@ class Spinner:
 
         self.spinner = ['-', '\\', '|', '/'] # The spinner characters
         self.delay = 0.1 # Delay between spinner updates (in seconds)
-        self.busy = False # Flag to control the spinner loop
+        self.busy = False # To control whether the spinner is active or not
         self.message = message # Custom message to show next to the spinner
 
     def spin(self):
@@ -30,11 +30,12 @@ class Spinner:
         while self.busy:
             for char in self.spinner:
                 if not self.busy:
-                    # If the busy flag was turned off during the sleep, exit immediately
+                    # If the busy flag was turned off during the time.sleep, exit immediately
                     break
                 # \r overwrites the current line in the terminal
                 sys.stdout.write(f"\r{CLI_COLORS["CYAN"]}[AI] {self.message}... {char}{CLI_COLORS["RESET"]}")
-                sys.stdout.flush() # Forces the output to appear immediately in the terminal
+                # Forces the output to appear immediately in the terminal
+                sys.stdout.flush() 
                 time.sleep(self.delay)
                 
         # \033[K acts as an eraser to wipe the line clean when finished
@@ -90,6 +91,7 @@ PORT_COORDINATES = {
 # ==========================================
 # THE KNOWLEDGE GRAPH (Nodes, Edges & Distances)
 # ==========================================
+# This is a list of what all ports are connected to each other
 # Values are estimated Nautical Miles (NM) between ports.
 MARITIME_NETWORK = {
     # --- ASIA & MIDDLE EAST ---
@@ -331,12 +333,8 @@ def calculate_total_distance(path):
 # ==========================================
 # COMMAND-LINE INTERFACE (UI)
 # ==========================================
-def clear_screen():
-    # Clears the terminal screen by printing empty lines.
-    print("\n" * 50)
-
 def print_logo():
-    # Prints the AquaPath AI ASCII text logo to the console with colors.
+    # Prints the AquaPath AI text logo to the console
     
     print(f"{CLI_COLORS['CYAN']}{CLI_COLORS['BOLD']}***************************************************")
     print(f"* *")
@@ -346,16 +344,20 @@ def print_logo():
     print(f"* *")
     print(f"***************************************************{CLI_COLORS['RESET']}")
 
+# ==========================================
+# MAIN EXECUTION FUNCTION
+# ==========================================
 def main():
     # The main execution function of the application.
     # Handles user input formatting, computes shortest physical routes, runs
     # safety evaluations via the ML engine, and outputs the optimal choice.
 
     # Initial UI Setup
-    clear_screen()
+    # Clear the terminal screen by printing lines
+    print("\n" * 50)
     print_logo()
     
-    # Show Available Ports
+    # Show Available Ports in a table
     ports_list = list(MARITIME_NETWORK.keys())
     print(f"{CLI_COLORS['CYAN']}Available Global Ports:{CLI_COLORS['RESET']}")
     for i in range(0, len(ports_list), 3):
@@ -365,17 +367,17 @@ def main():
         # The :<15 format specifier left-aligns the text in a 15-character wide column,
         print(f"  {col1:<15} {col2:<15} {col3:<15}") 
     
-    # A visual separator to distinguish the port list from the user input section
+    # A visual separator to distinguish the port list from the user input
     print("\n" + "="*50)
     
     # Get User Input
     try:
         # Use a loop to continuously prompt the user until
-        # they provide valid input for both the starting and destination ports.
+        # they provide valid input for the starting port.
         while True:
             start_port = input("Enter Starting Port: ").strip().title()
 
-            # Check if the entered port is in our list of valid ports. 
+            # Check if the entered port is in our list of ports. 
             # If it is, break out of the loop and move on to the next input. 
             # If not, show an error message and prompt again.
             if start_port in ports_list:
@@ -384,7 +386,7 @@ def main():
                 print(f"\n{CLI_COLORS['RED']}[!] Error: Invalid port selected. Please check spelling.{CLI_COLORS['RESET']}")
 
         # Repeat the same process for the destination port, 
-        # ensuring that the user selects valid ports from the predefined list.
+        # ensuring that the user selects valid ports
         while True:
             end_port = input("Enter Destination Port: ").strip().title()
         
@@ -394,7 +396,7 @@ def main():
                 print(f"\n{CLI_COLORS['RED']}[!] Error: Invalid port selected. Please check spelling.{CLI_COLORS['RESET']}")
     except KeyboardInterrupt:
         # This allows the user to exit gracefully 
-        # if they decide to cancel the input process (e.g., by pressing Ctrl+C).
+        # if they decide to cancel the input process by pressing Ctrl+C
         print(f"\n\n{CLI_COLORS['YELLOW']}[!] Program shutdown initiated. Shutting down AquaPath AI safely...{CLI_COLORS['RESET']}")
         return
 
@@ -406,30 +408,32 @@ def main():
     possible_routes = find_all_paths(MARITIME_NETWORK, start_port, end_port)
     
     # If there are no valid routes found between the selected ports, 
-    # inform the user and exit the program gracefully.
+    # inform the user and exit the program
     if not possible_routes:
         print(f"\n{CLI_COLORS['RED']}[!] No valid maritime route found between these ports.{CLI_COLORS['RESET']}")
         return
         
-    # Calculate distance for all paths and sort them from shortest to longest
+    # Calculate distance for all paths
     routes_with_distance = []
     for path in possible_routes:
         dist = calculate_total_distance(path)
         routes_with_distance.append({"path": path, "distance": dist})
         
     # Sort the list by distance (shortest first)
+    # Lambda is used to get the distance value of each path
     routes_with_distance.sort(key=lambda x: x['distance'])
     
-    # Keep only the top 3 physically shortest routes to evaluate for safety
+    # Keep only the top 3 physically shortest routes to evaluate for safety using list slicing
     top_shortest_routes = routes_with_distance[:3]
 
-    # Evaluate routes
     scored_routes = []
+
+    # Show the user that we have found the top 3 shortest routes
     print(CLI_COLORS['GREEN'] +"\n" + "="*50)
     print(f" 🗺️  TOP 3 SHORTEST ROUTES DISCOVERED ")
     print("="*50 + CLI_COLORS['RESET'])
     
-    # Show the top 3 shortest routes before evaluating them
+    # Show the top 3 shortest routes
     for idx, route_data in enumerate(top_shortest_routes):
         path = route_data["path"]
         distance = route_data["distance"]
@@ -437,14 +441,15 @@ def main():
         print(f"Option {idx + 1}: {path_string}\n    Distance: {distance} NM")
         time.sleep(0.5)
     
-    # A visual separator to distinguish the route discovery phase from 
+    # A visual separator to distinguish the route finding phase from 
     # the safety evaluation phase
     print("\n" + "="*50)
 
     # Run the safety evaluation for each of the top 3 shortest routes, 
     # Showing an animated spinner while 
     # live data is being fetched and calculations are being performed.
-    for idx, route_data in enumerate(top_shortest_routes):
+    # Enumerate gives us both the index and the route data for each option
+    for idx, route_data in enumerate(top_shortest_routes): 
         path = route_data["path"]
         distance = route_data["distance"]
         path_string = " -> ".join(path)
@@ -459,7 +464,9 @@ def main():
             # the raw data for waves, wind, and traffic.
             avg_score, avg_wave, avg_wind, avg_traffic, used_fallback = evaluate_full_path(path)
         finally:
-            spinner.stop() # Spinner erases completely here
+            # Stop the spinner after the evaluation is complete, 
+            # regardless of success or failure.
+            spinner.stop()
         
         # Save the route data
         scored_routes.append({
@@ -469,7 +476,7 @@ def main():
             "distance": distance
         })
         
-        # Print the results cleanly after the spinner is gone
+        # Print the results after the spinner is gone
         print(f"{CLI_COLORS['GREEN']}✅ Option {idx + 1} Evaluated: {path_string}{CLI_COLORS['RESET']}")
         
         # Print the warning if the API failed
@@ -477,7 +484,7 @@ def main():
             print(f"   {CLI_COLORS['YELLOW']}[!] WARNING: Unable to fetch live data. Using fallback weather values.{CLI_COLORS['RESET']}")
         
         # Print the average conditions and the calculated warning level for this route, 
-        # giving the user insight into why the score is what it is.
+        # showing the user why the score is what it is.
         print(f"   -> Avg Weather: Waves {avg_wave}m | Wind {avg_wind}km/h")
         print(f"   -> Avg Traffic: {avg_traffic} active vessels detected")
         print(f"   -> Warning Level: {avg_score}/5.00\n")
@@ -488,7 +495,7 @@ def main():
     best_route = find_best_route(scored_routes)
     
     # Final Output: Show the optimal route with its safety score, 
-    # a color-coded safety status, and a visual map of the ports along the route.
+    # safety status, and a visual map of the ports along the route.
     print(CLI_COLORS['GREEN'] + "\n" + "="*50)
     print("✅ OPTIMAL ROUTE SELECTED")
     print("="*50 + CLI_COLORS['RESET'])
@@ -503,6 +510,6 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        # This catches the Ctrl+C command and hides the ugly red error text
+        # This catches the Ctrl+C command and hides the red error text
         print(f"\n\n{CLI_COLORS['YELLOW']}[!] Program shutdown initiated. Shutting down AquaPath AI safely...{CLI_COLORS['RESET']}")
         sys.exit(0)
